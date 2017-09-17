@@ -1,0 +1,125 @@
+import numpy as np
+from numpy import linalg as LA
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import mean_squared_error
+from math import sqrt
+from scipy.stats import pearsonr
+import time as timer
+
+sns.set()
+
+
+def get_ratingMatrix():
+    names = ['user_id', 'item_id', 'rating', 'timestamp']
+    df = pd.read_csv('ratings.csv', header=0, names=names)
+    n_users = set(df.user_id)
+    n_items = set(df.item_id)
+
+    ratings = np.zeros((len(n_items), len(n_users)))
+    df = df.as_matrix()
+
+    movieSort = sorted(n_items)
+    movieKey0 = {}
+    for i in range(len(n_items)):
+        movieKey0[i] = movieSort[i]
+
+    movieKey = dict((v, k) for k, v in movieKey0.items())
+
+    for i in range(df.shape[0]):
+        userId = int(df[i][0])
+        movieId = int(df[i][1])
+        rating = df[i][2]
+        ratings[movieKey[movieId]][userId - 1] = rating
+    return ratings
+
+
+def similarity_matrix(r, kind='item', epsilon=1e-9):
+    # epsilon -> small number for handling dived-by-zero errors
+    if kind == 'item':
+        sim = r.dot(r.T) + epsilon
+    elif kind == 'user':
+        sim = r.T.dot(r) + epsilon
+    norms = cal_norms(r, kind)
+    x = norms.T * norms
+    return (sim / x)
+
+
+def cal_norms(r, kind='item'):
+    m, n = r.shape
+    if kind == 'item':
+        norns_list = np.zeros(m)
+        for i in range(m):
+            norns_list[i] = LA.norm(r[i])
+    elif kind == 'user':
+        norns_list = np.zeros(n)
+        for i in range(n):
+            norns_list[i] = LA.norm(r.T[i])
+    return norns_list
+
+
+def predict_matrix(r, similarity, kind='item'):
+    predict = np.zeros(r.shape)
+    if kind == 'item':
+        for i in range(r.shape[0]):
+            for j in range(r.shape[1]):
+                predict[i][j] = similarity[i, :].dot(r.T[j]) / np.sum(np.abs(similarity[i]))
+        return predict
+    elif kind == 'user':
+        for i in range(r.shape[0]):
+            for j in range(r.shape[1]):
+                predict[i][j] = similarity[j].dot(r[i].T) / np.sum(np.abs(similarity[j]))
+
+        return predict
+
+def train_test_split(ratings):
+    test = np.zeros(ratings.shape)
+    train = ratings.copy()
+    for movie in range(ratings.shape[0]):
+        test_ratings = np.random.choice(ratings[movie].nonzero()[0],size=10)
+        train[movie][test_ratings] = 0.
+        test[movie][test_ratings] = ratings[movie][test_ratings]
+        
+    # Test and training are truly disjoint
+    assert(np.all((train * test) == 0)) 
+    return train, test
+
+def get_rmse(pred, actual):
+    print(len(actual.nonzero()[0]))
+    print(len(pred.nonzero()[0]))
+    # pred = pred[actual.nonzero()].flatten()
+    # actual = actual[actual.nonzero()].flatten()
+    pred = pred[actual.nonzero()]
+    actual = actual[actual.nonzero()]
+    return sqrt(mean_squared_error(pred, actual))
+
+
+ratings = get_ratingMatrix()
+print(ratings.shape)
+
+start = timer.time()
+# sim = similarity_matrix(ratings, 'item')
+# print('similarity matrix calculated')
+# x = predict_matrix(ratings, sim, 'item')
+# print('shape of prediction', x.shape)
+# np.savetxt("term2termCF.csv", x, delimiter=",")
+
+# sim = similarity_matrix(ratings, 'user')
+# print('similarity matrix calculated')
+# y = predict_matrix(ratings, sim, 'user')
+# print('shape of prediction', y.shape)
+# np.savetxt("user2userCF.csv", y, delimiter=",")
+sim = similarity_matrix(ratings, 'user')
+#train,test = train_test_split(ratings)
+x = predict_matrix(ratings, sim, 'user')
+print(get_rmse(x,ratings))
+
+
+# print('Item-to-Item CF RMSE: ' + str(get_rmse(item_prediction, test)))
+
+# user_prediction = user2userCF(train)
+# print('User-to-User CF RMSE: ' + str(get_rmse(user_prediction, test)))
+
+stop = timer.time()
+print('Elapsed time:', stop - start, 'sec')
